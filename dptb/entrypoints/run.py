@@ -24,6 +24,7 @@ from dptb.postprocess.bandstructure.ifermi_api import ifermiapi, ifermi_installe
 from dptb.postprocess.write_skparam import WriteNNSKParam
 from dptb.postprocess.NEGF import NEGF
 from dptb.postprocess.tbtrans_init import TBTransInputSet,sisl_installed
+from dptb.postprocess.nanotcad_init import NanoTCADInputSet
 
 __all__ = ["run"]
 
@@ -225,6 +226,17 @@ def run(
         tbtrans_init.load_model()
         tbtrans_init.hamil_get_write(write_nc=True)
         log.info(msg='TBtrans input files are successfully generated.')
+
+    if task == 'nanotcad_negf':
+        if not(sisl_installed):
+            log.error(msg="sisl is required to perform nanotcad_negf operation !")
+            raise RuntimeError
+
+        tbtrans_init = NanoTCADInputSet(apiHrk, run_opt, task_options)
+        tbtrans_init.load_model()
+        tbtrans_init.hamil_get_write(write_nc=True)
+        log.info(msg='NanoTCAD input files  are successfully generated.')
+
 
     if output:
         with open(os.path.join(output, "run_config.json"), "w") as fp:
