@@ -234,7 +234,8 @@ def run(
 
         tbtrans_init = NanoTCADInputSet(apiHrk, run_opt, task_options)
         tbtrans_init.load_model()
-        tbtrans_init.hamil_get_write(write_nc=True)
+        tbtrans_init.hamil_get()
+        tbtrans_init.hamil_write()
         log.info(msg='NanoTCAD input files  are successfully generated.')
 
 
