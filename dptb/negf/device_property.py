@@ -174,30 +174,12 @@ class DeviceProperty(object):
         else:
             self.newV_flag = True  # for the first time to run cal_green_function in Poisson-NEGF SCF
 
-        
-        # if not hasattr(self, "hd") or not hasattr(self, "sd"): 
-        #maybe the reason why different kpoint has different green function
-        
-        # if [not hasattr(self, "hd") or not hasattr(self, "sd")]: 
-        #     if not self.block_tridiagonal:
-        #         self.hd, self.sd, _, _, _, _ = self.hamiltonian.get_hs_device(self.kpoint, self.V, block_tridiagonal)
-        #     else:
-        #         self.hd, self.sd, self.hl, self.su, self.sl, self.hu = self.hamiltonian.get_hs_device(self.kpoint, self.V, block_tridiagonal)
-        # elif [self.newK_flag or self.newV_flag]: # check whether kpoints or Vbias change or not
-        #     if not self.block_tridiagonal:
-        #         self.hd, self.sd, _, _, _, _ = self.hamiltonian.get_hs_device(kpoint, self.V, block_tridiagonal)
-        #     else:
-        #         self.hd, self.sd, self.hl, self.su, self.sl, self.hu = self.hamiltonian.get_hs_device(self.kpoint, self.V, block_tridiagonal)
-        
-        # hd in format:(block_index,orb,orb)
         if (not (hasattr(self, "hd") and hasattr(self, "sd"))) or (self.newK_flag or self.newV_flag):               
             self.hd, self.sd, self.hl, self.su, self.sl, self.hu = self.hamiltonian.get_hs_device(self.kpoint, self.V, block_tridiagonal)
 
 
         s_in = [torch.zeros(i.shape).cdouble() for i in self.hd]
-        
-        # for i, e in tqdm(enumerate(ee), desc="Compute green functions: "):
-        
+               
         tags = ["g_trans","gr_lc", \
                "grd", "grl", "gru", "gr_left", \
                "gnd", "gnl", "gnu", "gin_left", \

@@ -122,22 +122,16 @@ class LeadProperty(object):
         # according to given kpoint and e_mesh, calculating or loading the self energy and surface green function to self.
         if not isinstance(energy, torch.Tensor):
             energy = torch.tensor(energy) # Energy relative to Ef
-
-        # if not hasattr(self, "HL"):
-        #TODO: check here whether it is necessary to calculate the self energy every time
-
         
         if save_path is None:
-            save_path = os.path.join(self.results_path, \
-                                        "self_energy",\
+            save_path = os.path.join(self.results_path,"self_energy",\
                                         f"se_{self.tab}_k{kpoint[0]}_{kpoint[1]}_{kpoint[2]}_E{energy}.pth")
             parent_dir = os.path.dirname(save_path)
             if not os.path.exists(parent_dir): 
                 os.makedirs(parent_dir)
 
-        # If the file in save_path exists, then directly load the self energy from the file    
+        # If the .pth file in save_path exists, then directly load it    
         if os.path.exists(save_path):
-
             if se_info_display: log.info(f"Loading self energy from {save_path}")     
             if not save_path.endswith(".pth"):
                 # if the save_path is a directory, then the self energy file is stored in the directory
@@ -152,6 +146,8 @@ class LeadProperty(object):
                 log.info(f"Not find stored {self.tab} self energy. Calculating it at kpoint {kpoint} and energy {energy}.")
                 log.info("-"*50)
 
+
+        # calculate self energy
         if not self.useBloch:
             if not hasattr(self, "HL") or abs(self.voltage_old-self.voltage)>1e-6 or max(abs(self.kpoint-torch.tensor(kpoint)))>1e-6:
                 self.HLk, self.HLLk, self.HDLk, self.SLk, self.SLLk, self.SDLk \

@@ -241,7 +241,7 @@ class Fiori(Density):
         self.e_grid_Fiori = None
 
     def density_integrate_Fiori(self,e_grid,kpoint,Vbias,block_tridiagonal,subblocks,integrate_way,deviceprop,
-                                device_atom_norbs,potential_at_atom,free_charge, 
+                                device_atom_norbs,potential_at_atom,with_Dirichlet_leads,free_charge,
                                 eta_lead=1e-5, eta_device=1e-5):
         if integrate_way == "gauss":
             assert self.n_gauss is not None, "n_gauss must be set in the Fiori class"
@@ -265,9 +265,22 @@ class Fiori(Density):
 
 
         for eidx, e in enumerate(integrate_range):
-            deviceprop.lead_L.self_energy(kpoint=kpoint, energy=e, eta_lead=eta_lead)
-            deviceprop.lead_R.self_energy(kpoint=kpoint, energy=e, eta_lead=eta_lead)
-            deviceprop.cal_green_function(energy=e, kpoint=kpoint, block_tridiagonal=block_tridiagonal, eta_device=eta_device,Vbias = Vbias)
+            if not with_Dirichlet_leads:
+                # Follow the NanoTCAD ViDES code:
+                #   Because the Dirichlet leads are not included, self-energy of the leads would be updated in each iteration
+                #   to ensure the Neuamnn boundary condition in the leads.
+                deviceprop.lead_L.self_energy(kpoint=kpoint, energy=e, eta_lead=eta_lead)
+                deviceprop.lead_R.self_energy(kpoint=kpoint, energy=e, eta_lead=eta_lead)
+
+            else:
+                # For the Dirichlet leads, the self-energy of the leads is only calculated once and saved.
+                # In each iteration, the self-energy of the leads is not updated.
+                deviceprop.lead_L.self_energy(kpoint=kpoint, energy=e, eta_lead=eta_lead, save=True)
+                deviceprop.lead_R.self_energy(kpoint=kpoint, energy=e, eta_lead=eta_lead, save=True)
+            
+            
+            deviceprop.cal_green_function(energy=e, kpoint=kpoint, block_tridiagonal=block_tridiagonal,\
+                                          eta_device=eta_device,Vbias = Vbias)
 
             tx, ty = deviceprop.g_trans.shape
             lx, ly = deviceprop.lead_L.se.shape
@@ -300,9 +313,7 @@ class Fiori(Density):
                 if e >= Ei_at_atom: 
                     if not block_tridiagonal:
                         free_charge[str(kpoint)][atom_index] +=\
-                            pre_factor[eidx]*2*(-1)/2/torch.pi*torch.trace(gnd[0][pre_orbs:last_orbs,pre_orbs:last_orbs])
-                        # free_charge[str(kpoint)][atom_index] +=\
-                        #     pre_factor[eidx]*2*(-1)/2/torch.pi*torch.trace(deviceprop.gnd[0][pre_orbs:last_orbs,pre_orbs:last_orbs])                            
+                            pre_factor[eidx]*2*(-1)/2/torch.pi*torch.trace(gnd[0][pre_orbs:last_orbs,pre_orbs:last_orbs])                          
                     else:
                         block_indexs,orb_start,orb_end = self.get_subblock_index(subblocks,atom_index,device_atom_norbs)
                         if len(block_indexs) == 1:

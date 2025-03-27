@@ -102,9 +102,9 @@ class region(object):
         self.ymin,self.ymax = float(y_range[0]),float(y_range[1])
         self.zmin,self.zmax = float(z_range[0]),float(z_range[1])
     
-class Gate(region):
+class Dirichlet(region):
     def __init__(self,x_range,y_range,z_range):
-        # Gate region
+        # Dirichlet boundary condition
         super().__init__(x_range,y_range,z_range)
         # Fermi_level of gate (in unit eV)
         self.Ef = 0.0        
@@ -121,17 +121,19 @@ class Dielectric(region):
 
 
 class Interface3D(object):
-    def __init__(self,grid,gate_list,dielectric_list):
+    def __init__(self,grid,Dirichlet_group,dielectric_group):
         assert grid.__class__.__name__ == 'Grid'
 
         
-        for i in range(0,len(gate_list)):
-            if not gate_list[i].__class__.__name__ == 'Gate':
-                raise ValueError('Unknown region type in Gate list: ',gate_list[i].__class__.__name__)
-        for i in range(0,len(dielectric_list)):
-            if not dielectric_list[i].__class__.__name__ == 'Dielectric':
-                raise ValueError('Unknown region type in Dielectric list: ',dielectric_list[i].__class__.__name__)
+        for i in range(0,len(Dirichlet_group)):
+            if not Dirichlet_group[i].__class__.__name__ == 'Dirichlet':
+                raise ValueError('Unknown region type in Gate list: ',Dirichlet_group[i].__class__.__name__)
+        for i in range(0,len(dielectric_group)):
+            if not dielectric_group[i].__class__.__name__ == 'Dielectric':
+                raise ValueError('Unknown region type in Dielectric list: ',dielectric_group[i].__class__.__name__)
             
+        self.Dirichlet_group = Dirichlet_group
+        self.dielectric_group = dielectric_group
         self.grid = grid
         self.eps = np.ones(grid.Np) # dielectric permittivity
         self.phi,self.phi_old = np.zeros(grid.Np),np.zeros(grid.Np) # potential
@@ -144,7 +146,7 @@ class Interface3D(object):
         self.boudnary_points = {i:"in" for i in range(self.grid.Np)} # initially set all points as internal
         self.get_boundary_points()
 
-        self.lead_gate_potential = np.zeros(grid.Np) # no gate potential initially, all grid points are set to zero
+        self.lead_gate_potential = np.zeros(grid.Np) # no lead or gate potential initially, all grid points are set to zero
         
         
 
@@ -181,10 +183,10 @@ class Interface3D(object):
                 
         self.internal_NP = internal_NP
     
-    def get_potential_eps(self,region_list):
-        # set the gate potential
-        # ingore the lead potential temporarily
-        gate_point = 0
+    def get_potential_eps(self):
+        # assign the potential of Dirichlet region and dielectric permittivity to the grid points
+        region_list = self.Dirichlet_group+self.dielectric_group
+        Dirichlet_point = 0
         for i in range(len(region_list)):    
             # find gate region in grid
             index=np.nonzero((region_list[i].xmin<=self.grid.grid_coord[:,0])&
@@ -193,18 +195,18 @@ class Interface3D(object):
                         (region_list[i].ymax>=self.grid.grid_coord[:,1])&
                         (region_list[i].zmin<=self.grid.grid_coord[:,2])&
                         (region_list[i].zmax>=self.grid.grid_coord[:,2]))[0]
-            if region_list[i].__class__.__name__ == 'Gate': 
-                #attribute gate potential to the corresponding grid points
-                self.boudnary_points.update({index[i]: "Gate" for i in range(len(index))})
+            if region_list[i].__class__.__name__ == 'Dirichlet': 
+                #attribute potential of Dirichlet region(lead and gate) to the corresponding grid points
+                self.boudnary_points.update({index[i]: "Dirichlet" for i in range(len(index))})
                 self.lead_gate_potential[index] = -1*region_list[i].Ef 
-                gate_point += len(index)
+                Dirichlet_point += len(index)
             elif region_list[i].__class__.__name__ == 'Dielectric':
                 # attribute dielectric permittivity to the corresponding grid points
                 self.eps[index] = region_list[i].eps
             else:
                 raise ValueError('Unknown region type: ',region_list[i].__class__.__name__)
         
-        log.info(msg="Number of gate points: {:.1f}".format(float(gate_point)))
+        log.info(msg="Number of Dirichlet points: {:.1f}".format(float(Dirichlet_point)))
         
         
     def to_pyamg_Jac_B(self,dtype=np.float64):
@@ -391,7 +393,7 @@ class Interface3D(object):
                 elif self.boudnary_points[gp_index] == "zmax":
                     J[gp_index,gp_index-Nx*Ny] = -1.0
                     B[gp_index] = (self.phi[gp_index]-self.phi[gp_index-Nx*Ny])
-                elif self.boudnary_points[gp_index] == "Gate":
+                elif self.boudnary_points[gp_index] == "Dirichlet":
                     B[gp_index] = (self.phi[gp_index]-self.lead_gate_potential[gp_index])
 
             if B[gp_index]!=0: # for convenience change the sign of B in later NR iteration

@@ -1215,6 +1215,7 @@ def scipy():
         Argument("max_iter", int, optional=True, default=100, doc=doc_max_iter),
         Argument("mix_rate", int, optional=True, default=0.25, doc=doc_mix_rate),
         Argument("poisson_dtype", str, optional=True, default='float64', doc=doc_poisson_dtype),
+        Argument("with_Dirichlet_leads", bool, optional=True, default=False, doc="Whether to use Dirichlet boundary condition for leads"),
         Argument("grid", dict, optional=True, sub_fields=grid(), doc=doc_grid),
         Argument("gate_top", dict, optional=True, sub_fields=gate(), doc=doc_gate),
         Argument("gate_bottom", dict, optional=True, sub_fields=gate(), doc=doc_gate),
