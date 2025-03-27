@@ -183,9 +183,8 @@ class Interface3D(object):
                 
         self.internal_NP = internal_NP
     
-    def get_potential_eps(self):
+    def get_potential_eps(self,region_list):
         # assign the potential of Dirichlet region and dielectric permittivity to the grid points
-        region_list = self.Dirichlet_group+self.dielectric_group
         Dirichlet_point = 0
         for i in range(len(region_list)):    
             # find gate region in grid
