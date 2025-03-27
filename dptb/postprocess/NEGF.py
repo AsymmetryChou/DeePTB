@@ -19,7 +19,7 @@ from dptb.utils.tools import j_must_have
 import numpy as np
 from dptb.utils.make_kpoints import kmesh_sampling_negf
 import logging
-from dptb.negf.poisson_init import Grid,Interface3D,Gate,Dielectric
+from dptb.negf.poisson_init import Grid,Interface3D,Dirichlet,Dielectric
 from typing import Optional, Union
 # from pyinstrument import Profiler
 from dptb.data import AtomicData, AtomicDataDict
@@ -201,7 +201,9 @@ class NEGF(object):
         self.poisson_options = poisson_options
         # self.LDOS_integral = {}  # for electron density integral
         self.free_charge = {} # net charge: hole - electron
-        self.gate_region = [self.poisson_options[i] for i in self.poisson_options if i.startswith("gate")]
+        # Dirichlet region for Poisson equation
+        self.Dirichlet_region = [self.poisson_options[i] for i in self.poisson_options if i.startswith("gate") or i.startswith("electrode")]
+        
         self.dielectric_region = [self.poisson_options[i] for i in self.poisson_options if i.startswith("dielectric")]
         self.doped_region = [self.poisson_options[i] for i in self.poisson_options if i.startswith("doped")]
 
@@ -255,28 +257,29 @@ class NEGF(object):
             # create real-space grid
             grid = self.get_grid(self.poisson_options["grid"],self.deviceprop.structure)
 
-            # create gate
-            Gate_list = []
-            for gg in range(len(self.gate_region)):
-                gate_init = Gate(self.gate_region[gg].get("x_range",None).split(':'),\
-                                self.gate_region[gg].get("y_range",None).split(':'),\
-                                self.gate_region[gg].get("z_range",None).split(':'))
-                gate_init.Ef = -1*float(self.gate_region[gg].get("voltage",None)) # in unit of eV
-                Gate_list.append(gate_init)
+            # create Dirichlet boundary condition region
+            Dirichlet_group = []
+            for idx in range(len(self.Dirichlet_region)):
+                Dirichlet_init = Dirichlet(self.Dirichlet_region[idx].get("x_range",None).split(':'),\
+                                self.Dirichlet_region[idx].get("y_range",None).split(':'),\
+                                self.Dirichlet_region[idx].get("z_range",None).split(':'))
+                #TODO: when heterogenous Dirichlet conditions are set, the voltage should be set as electrochemical potential(Fermi level + voltage)
+                Dirichlet_init.Ef = -1*float(self.Dirichlet_region[idx].get("voltage",None)) # in unit of eV
+                Dirichlet_group.append(Dirichlet_init)
             
-            # create dielectric            
-            Dielectric_list = []
+            # create dielectric region          
+            dielectric_group = []
             for dd in range(len(self.dielectric_region)):
                 dielectric_init = Dielectric(   self.dielectric_region[dd].get("x_range",None).split(':'),\
                                                 self.dielectric_region[dd].get("y_range",None).split(':'),\
                                                 self.dielectric_region[dd].get("z_range",None).split(':'))
                 dielectric_init.eps = float(self.dielectric_region[dd].get("relative permittivity",None))
-                Dielectric_list.append(dielectric_init) 
+                dielectric_group.append(dielectric_init) 
 
             # create interface
-            interface_poisson = Interface3D(grid,Gate_list,Dielectric_list)
+            interface_poisson = Interface3D(grid,Dirichlet_group,dielectric_group)
+            interface_poisson.get_potential_eps()
             atom_gridpoint_index =  list(interface_poisson.grid.atom_index_dict.values()) # atomic site index in the grid
-            interface_poisson.get_potential_eps(Gate_list+Dielectric_list)
             for dp in range(len(self.doped_region)):
                 interface_poisson.get_fixed_charge( self.doped_region[dp].get("x_range",None).split(':'),\
                                                     self.doped_region[dp].get("y_range",None).split(':'),\
@@ -375,7 +378,7 @@ class NEGF(object):
     def negf_compute(self,scf_require=False,Vbias=None):
         
     
-        assert scf_require is not None
+        assert scf_require is not None, "scf_require should be set to True or False"
 
         self.out['k']=[];self.out['wk']=[]
         if hasattr(self, "uni_grid"): self.out["uni_grid"] = self.uni_grid
@@ -388,23 +391,30 @@ class NEGF(object):
             log.info(msg="Properties computation at k = [{:.4f},{:.4f},{:.4f}]".format(float(k[0]),float(k[1]),float(k[2])))
 
             if scf_require:
-                if self.density_options["method"] == "Fiori":
+                if self.density_options["method"] == "Fiori":                    
                     leads = self.stru_options.keys()
+                    if not self.poisson_options["with_Dirichlet_leads"]:
+                        # Follow the NanoTCAD convention for NEGF-Poisson SCF
+                        # without Dirichlet leads, the voltage is set as the average of the potential at the most left and right parts
+                        for ll in leads:
+                            if ll.startswith("lead"):
+                                if Vbias is not None  and self.density_options["method"] == "Fiori":
+                                    # set voltage as -1*potential_at_orb[0] and -1*potential_at_orb[-1] for self-energy same as in NanoTCAD
+                                    if ll == 'lead_L' :
+                                        getattr(self.deviceprop, ll).voltage = Vbias[self.left_connected_orb_mask].mean()
+                                        # getattr(self.deviceprop, ll).voltage = Vbias[0]
+                                    else:
+                                        getattr(self.deviceprop, ll).voltage = Vbias[self.right_connected_orb_mask].mean()
+                                        # getattr(self.deviceprop, ll).voltage = Vbias[-1]                                     
+                    else:
+                        # TODO: consider the case with heterogeneous Dirichlet leads
+                        # In this case, the Dirichlet conditions in leads and gate are set as electrochemical potential(Fermi level + voltage)
+                        assert getattr(self.deviceprop, "lead_L").voltage == self.stru_options["lead_L"]["voltage"]
+                        assert getattr(self.deviceprop, "lead_R").voltage == self.stru_options["lead_R"]["voltage"]
 
-                    for ll in leads:
-                        if ll.startswith("lead"):
-                            if Vbias is not None  and self.density_options["method"] == "Fiori":
-                                # set voltage as -1*potential_at_orb[0] and -1*potential_at_orb[-1] for self-energy same as in NanoTCAD
-                                if ll == 'lead_L' :
-                                    getattr(self.deviceprop, ll).voltage = Vbias[self.left_connected_orb_mask].mean()
-                                    # getattr(self.deviceprop, ll).voltage = Vbias[0]
-                                else:
-                                    getattr(self.deviceprop, ll).voltage = Vbias[self.right_connected_orb_mask].mean()
-                                    # getattr(self.deviceprop, ll).voltage = Vbias[-1]
-                    
                     if self.negf_hamiltonian.subblocks is None:
-                            self.negf_hamiltonian.subblocks = \
-                                    self.negf_hamiltonian.get_hs_device(only_subblocks=True)
+                            self.negf_hamiltonian.subblocks = self.negf_hamiltonian.get_hs_device(only_subblocks=True)
+                    
                     self.density.density_integrate_Fiori(
                         e_grid = self.uni_grid, 
                         kpoint=k,
@@ -415,6 +425,7 @@ class NEGF(object):
                         deviceprop=self.deviceprop,
                         device_atom_norbs=self.device_atom_norbs,
                         potential_at_atom = self.potential_at_atom,
+                        with_Dirichlet_leads = self.poisson_options["with_Dirichlet_leads"],
                         free_charge = self.free_charge,
                         eta_lead = self.eta_lead,
                         eta_device = self.eta_device
@@ -433,17 +444,16 @@ class NEGF(object):
                         if ie % output_freq == 0:
                             log.info(msg="computing green's function at e = {:.3f}".format(float(e)))
                         leads = self.stru_options.keys()
-                        for ll in leads:
-                            if ll.startswith("lead"):
-                                if Vbias is not None  and self.density_options["method"] == "Fiori":
-                                    # set voltage as -1*potential_at_orb[0] and -1*potential_at_orb[-1] for self-energy same as in NanoTCAD
-                                    if ll == 'lead_L':
-                                        getattr(self.deviceprop, ll).voltage = Vbias[self.left_connected_orb_mask].mean()
-                                        
-                                    else:
-                                        getattr(self.deviceprop, ll).voltage = Vbias[self.right_connected_orb_mask].mean()
-                                        
-                                
+                        if not self.poisson_options["with_Dirichlet_leads"]:
+                            for ll in leads:
+                                if ll.startswith("lead") and\
+                                    Vbias is not None  and\
+                                    self.density_options["method"] == "Fiori":
+                                        # set voltage as -1*potential_at_orb[0] and -1*potential_at_orb[-1] for self-energy same as in NanoTCAD
+                                        if ll == 'lead_L':
+                                            getattr(self.deviceprop, ll).voltage = Vbias[self.left_connected_orb_mask].mean()
+                                        else:
+                                            getattr(self.deviceprop, ll).voltage = Vbias[self.right_connected_orb_mask].mean()
                                 getattr(self.deviceprop, ll).self_energy(
                                     energy=e, 
                                     kpoint=k, 
@@ -455,6 +465,22 @@ class NEGF(object):
                                     )
                                 # self.out[str(ll)+"_se"][str(e.numpy())] = getattr(self.deviceprop, ll).se
                                 
+                        else:
+                            # TODO: consider the case with heterogeneous Dirichlet leads
+                            # In this case, the Dirichlet conditions in leads and gate are set as electrochemical potential(Fermi level + voltage)
+                            assert getattr(self.deviceprop, "lead_L").voltage == self.stru_options["lead_L"]["voltage"]
+                            assert getattr(self.deviceprop, "lead_R").voltage == self.stru_options["lead_R"]["voltage"]
+                            for ll in leads:
+                                getattr(self.deviceprop, ll).self_energy(
+                                    energy=e, 
+                                    kpoint=k, 
+                                    eta_lead=self.eta_lead,
+                                    method=self.sgf_solver,
+                                    save=self.self_energy_save,
+                                    save_path=self.self_energy_save_path,
+                                    se_info_display=self.se_info_display
+                                    )                                
+
                         self.deviceprop.cal_green_function(
                             energy=e, kpoint=k, 
                             eta_device=self.eta_device,
