@@ -278,7 +278,7 @@ class NEGF(object):
 
             # create interface
             interface_poisson = Interface3D(grid,Dirichlet_group,dielectric_group)
-            interface_poisson.get_potential_eps()
+            interface_poisson.get_potential_eps(Dirichlet_group+dielectric_group)
             atom_gridpoint_index =  list(interface_poisson.grid.atom_index_dict.values()) # atomic site index in the grid
             for dp in range(len(self.doped_region)):
                 interface_poisson.get_fixed_charge( self.doped_region[dp].get("x_range",None).split(':'),\
@@ -392,11 +392,10 @@ class NEGF(object):
 
             if scf_require:
                 if self.density_options["method"] == "Fiori":                    
-                    leads = self.stru_options.keys()
                     if not self.poisson_options["with_Dirichlet_leads"]:
                         # Follow the NanoTCAD convention for NEGF-Poisson SCF
                         # without Dirichlet leads, the voltage is set as the average of the potential at the most left and right parts
-                        for ll in leads:
+                        for ll in self.stru_options.keys():
                             if ll.startswith("lead"):
                                 if Vbias is not None  and self.density_options["method"] == "Fiori":
                                     # set voltage as -1*potential_at_orb[0] and -1*potential_at_orb[-1] for self-energy same as in NanoTCAD
@@ -443,43 +442,48 @@ class NEGF(object):
                     for ie, e in enumerate(self.uni_grid):
                         if ie % output_freq == 0:
                             log.info(msg="computing green's function at e = {:.3f}".format(float(e)))
-                        leads = self.stru_options.keys()
-                        if not self.poisson_options["with_Dirichlet_leads"]:
-                            for ll in leads:
-                                if ll.startswith("lead") and\
-                                    Vbias is not None  and\
-                                    self.density_options["method"] == "Fiori":
-                                        # set voltage as -1*potential_at_orb[0] and -1*potential_at_orb[-1] for self-energy same as in NanoTCAD
-                                        if ll == 'lead_L':
-                                            getattr(self.deviceprop, ll).voltage = Vbias[self.left_connected_orb_mask].mean()
-                                        else:
-                                            getattr(self.deviceprop, ll).voltage = Vbias[self.right_connected_orb_mask].mean()
-                                getattr(self.deviceprop, ll).self_energy(
-                                    energy=e, 
-                                    kpoint=k, 
-                                    eta_lead=self.eta_lead,
-                                    method=self.sgf_solver,
-                                    save=self.self_energy_save,
-                                    save_path=self.self_energy_save_path,
-                                    se_info_display=self.se_info_display
-                                    )
-                                # self.out[str(ll)+"_se"][str(e.numpy())] = getattr(self.deviceprop, ll).se
-                                
+                        if self.scf:
+                            if not self.poisson_options["with_Dirichlet_leads"]:
+                                for ll in self.stru_options.keys():
+                                    if ll.startswith("lead") and\
+                                        Vbias is not None  and\
+                                        self.density_options["method"] == "Fiori":
+                                            # set voltage as -1*potential_at_orb[0] and -1*potential_at_orb[-1] for self-energy same as in NanoTCAD
+                                            if ll == 'lead_L':
+                                                getattr(self.deviceprop, ll).voltage = Vbias[self.left_connected_orb_mask].mean()
+                                            else:
+                                                getattr(self.deviceprop, ll).voltage = Vbias[self.right_connected_orb_mask].mean()
+                            else:
+                                # TODO: consider the case with heterogeneous Dirichlet leads
+                                # In this case, the Dirichlet conditions in leads and gate are set as electrochemical potential(Fermi level + voltage)
+                                assert getattr(self.deviceprop, "lead_L").voltage == self.stru_options["lead_L"]["voltage"]
+                                assert getattr(self.deviceprop, "lead_R").voltage == self.stru_options["lead_R"]["voltage"]    
+                            
+                            for ll in self.stru_options.keys():
+                                if ll.startswith("lead"):
+                                    getattr(self.deviceprop, ll).self_energy(
+                                        energy=e, 
+                                        kpoint=k, 
+                                        eta_lead=self.eta_lead,
+                                        method=self.sgf_solver,
+                                        save=self.self_energy_save,
+                                        save_path=self.self_energy_save_path,
+                                        se_info_display=self.se_info_display
+                                        )
+                                    # self.out[str(ll)+"_se"][str(e.numpy())] = getattr(self.deviceprop, ll).se
+                                    
                         else:
-                            # TODO: consider the case with heterogeneous Dirichlet leads
-                            # In this case, the Dirichlet conditions in leads and gate are set as electrochemical potential(Fermi level + voltage)
-                            assert getattr(self.deviceprop, "lead_L").voltage == self.stru_options["lead_L"]["voltage"]
-                            assert getattr(self.deviceprop, "lead_R").voltage == self.stru_options["lead_R"]["voltage"]
-                            for ll in leads:
-                                getattr(self.deviceprop, ll).self_energy(
-                                    energy=e, 
-                                    kpoint=k, 
-                                    eta_lead=self.eta_lead,
-                                    method=self.sgf_solver,
-                                    save=self.self_energy_save,
-                                    save_path=self.self_energy_save_path,
-                                    se_info_display=self.se_info_display
-                                    )                                
+                            for ll in self.stru_options.keys():
+                                if ll.startswith("lead"):
+                                    getattr(self.deviceprop, ll).self_energy(
+                                        energy=e, 
+                                        kpoint=k, 
+                                        eta_lead=self.eta_lead,
+                                        method=self.sgf_solver,
+                                        save=self.self_energy_save,
+                                        save_path=self.self_energy_save_path,
+                                        se_info_display=self.se_info_display
+                                        )                                
 
                         self.deviceprop.cal_green_function(
                             energy=e, kpoint=k, 
@@ -564,8 +568,7 @@ class NEGF(object):
                         log.info(msg="computing local current at k = [{:.4f},{:.4f},{:.4f}]".format(float(k[0]),float(k[1]),float(k[2])))
                         for i, e in enumerate(self.int_grid):
                             log.info(msg=" computing green's function at e = {:.3f}".format(float(e)))
-                            leads = self.stru_options.keys()
-                            for ll in leads:
+                            for ll in self.stru_options.keys():
                                 if ll.startswith("lead"):
                                     getattr(self.deviceprop, ll).self_energy(
                                         energy=e, 

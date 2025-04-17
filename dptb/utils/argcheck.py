@@ -1217,8 +1217,10 @@ def scipy():
         Argument("poisson_dtype", str, optional=True, default='float64', doc=doc_poisson_dtype),
         Argument("with_Dirichlet_leads", bool, optional=True, default=False, doc="Whether to use Dirichlet boundary condition for leads"),
         Argument("grid", dict, optional=True, sub_fields=grid(), doc=doc_grid),
-        Argument("gate_top", dict, optional=True, sub_fields=gate(), doc=doc_gate),
-        Argument("gate_bottom", dict, optional=True, sub_fields=gate(), doc=doc_gate),
+        Argument("gate_top", dict, optional=True, sub_fields=Dirichlet_BC(), doc=doc_gate),
+        Argument("gate_bottom", dict, optional=True, sub_fields=Dirichlet_BC(), doc=doc_gate),
+        Argument("electrode_left", dict, optional=True, sub_fields=Dirichlet_BC(), doc=doc_gate),
+        Argument("electrode_right", dict, optional=True, sub_fields=Dirichlet_BC(), doc=doc_gate),
         Argument("dielectric_region", dict, optional=True, sub_fields=dielectric(), doc=doc_dielectric),
         Argument("doped_region1", dict, optional=True, sub_fields=doped(), doc=doc_doped),
         Argument("doped_region2", dict, optional=True, sub_fields=doped(), doc=doc_doped)
@@ -1234,7 +1236,7 @@ def grid():
         Argument("z_range", str, optional=False, doc=doc_zrange),
     ]
 
-def gate():
+def Dirichlet_BC():
     doc_xrange=""
     doc_yrange=""
     doc_zrange=""
